@@ -6,120 +6,100 @@ import { GUI } from "dat.gui";
 function App() {
   const ref = useRef<HTMLDivElement>(null);
   const [windowSize, setWindowSize] = useState<{ x: number; y: number }>({
-    x: 0,
-    y: 0,
+    x: innerWidth,
+    y: innerHeight,
   });
 
-  const GuiControl = useCallback(
-    ({ sphere, option, perspective, light }: any) => {
-      const gui = new GUI();
+  const GuiControl = useCallback(({ sphere, option, camera, light }: any) => {
+    const gui = new GUI();
 
-      const lightFolder = gui.addFolder("Light");
-      lightFolder.add(light.position, "x", -20, 20);
-      lightFolder.add(light.position, "y", -20, 20);
-      lightFolder.add(light.position, "z", -20, 20);
-      lightFolder.add(light.rotation, "z", 0, 2 * Math.PI);
-      lightFolder.add(light, "intensity", 0, 5);
+    const lightFolder = gui.addFolder("Light");
+    lightFolder.add(light.position, "x", -5, 5);
+    lightFolder.add(light.position, "y", 2, 10);
+    lightFolder.add(light.position, "z", -5, 5);
 
-      const sphereFolder = gui.addFolder("Sphere");
-      sphereFolder.add(sphere.position, "x", -10, 10);
-      sphereFolder.add(sphere.position, "y", -10, 10);
-      sphereFolder.add(sphere.position, "z", -10, 10);
-      sphereFolder.add(option, "wireframe").onChange((e) => {
-        sphere.material.wireframe = e;
-      });
-      sphereFolder.add(option, "speed", 0, 0.1);
-      sphereFolder.addColor(option, "sphereColor").onChange((e) => {
-        sphere.material.color.set(e);
-      });
+    lightFolder.add(light, "intensity", 0, 10);
+    lightFolder.add(light, "distance", 0, 50);
+    lightFolder.add(light, "penumbra", 0, 1);
+    lightFolder.add(light, "decay", -1, 1);
+    lightFolder.add(light, "angle", 0, 1);
 
-      const cameraFolder = gui.addFolder("Camera");
-      cameraFolder.add(perspective.position, "z", 0, 10);
-      sphereFolder.open();
-      cameraFolder.open();
-      lightFolder.open();
-      return gui;
-    },
-    []
-  );
+    const cameraFolder = gui.addFolder("Camera");
+    cameraFolder.add(camera.position, "z", 0, 10);
+    cameraFolder.open();
+    lightFolder.open();
+    return gui;
+  }, []);
 
   useEffect(() => {
-    let step = 5;
-    const option = {
-      sphereColor: "#f18040",
+    let step = 0;
+    const options = {
       speed: 0.01,
-      wireframe: false,
+      wareframe: false,
     };
+
     const renderer = new THREE.WebGLRenderer();
     const scene = new THREE.Scene();
-    const perspective = new THREE.PerspectiveCamera(
-      45,
-      innerWidth / innerHeight,
-      0.1,
-      1000
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      windowSize.x / windowSize.y,
+      1,
+      500
     );
-    renderer.setSize(innerWidth, innerHeight);
+    renderer.setSize(windowSize.x, windowSize.y);
     renderer.shadowMap.enabled = true;
     ref.current?.appendChild(renderer.domElement);
 
-    // Set the 🎥 position
-    perspective.position.set(0, 30, 30);
+    const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
+    const sphereMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
 
-    // Create The Floor
-    const planGeometry = new THREE.PlaneGeometry(30, 30);
-    const planMaterial = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
+    const planeGeometry = new THREE.PlaneGeometry(10, 10);
+    const planeMaterial = new THREE.MeshLambertMaterial({
+      color: 0xbc6c25,
       side: THREE.DoubleSide,
     });
-    planGeometry.rotateX(0.5 * Math.PI);
+    const planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+    planeMesh.rotateX(0.5 * Math.PI);
+    const grid = new THREE.GridHelper(10, 25);
 
-    const sphereGeometry = new THREE.SphereGeometry(5, 50, 50);
-    const sphereMaterial = new THREE.MeshLambertMaterial({
-      color: 0xf18040,
-    });
+    // ! Source Light
+    const spotLight = new THREE.SpotLight(0xefff00, 1, 25, 1, 1, 1);
+    const spotLightHelper = new THREE.SpotLightHelper(spotLight, 0xfff);
+    spotLight.position.y = 10;
 
-    const plane = new THREE.Mesh(planGeometry, planMaterial);
-    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    // ! RENDER SHADERS IN THE SCENE
+    scene.add(sphereMesh, planeMesh, grid, spotLight, spotLightHelper);
+    camera.position.set(0, 10, 10);
 
-    // sphere.position.set(2, 10, 0);
+    sphereMesh.castShadow = true;
+    spotLight.castShadow = true;
+    planeMesh.receiveShadow = true;
+    camera.castShadow = true;
 
-    // * GUI Control 🎮
-    function animateRotation() {
-      step += option.speed;
-      sphere.position.y = 5 * Math.abs(Math.sin(step)) + 5;
-      renderer.render(scene, perspective);
-    }
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    const directionalLightHelper = new THREE.DirectionalLightHelper(
-      directionalLight,
-      5
-    );
-
-    directionalLight.position.set(-30, 20, 0);
-
-    scene.add(directionalLight, plane, sphere, directionalLightHelper);
-    renderer.setAnimationLoop(animateRotation);
-
-    // SHADOW
-    plane.receiveShadow = true;
-    sphere.castShadow = true;
-    directionalLight.castShadow = true;
-
-    // Control Camera
-    const gui = GuiControl({
-      sphere,
-      option,
-      perspective,
-      light: directionalLight,
-    });
-    const orbit = new OrbitControls(perspective, renderer.domElement);
+    // * CONTROL
+    const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.update();
+
+    // ! RENDER THE SCENE & CAMERA
+    function animate() {
+      setTimeout(() => {
+        requestAnimationFrame(animate);
+      }, 1000 / 25);
+      step += options.speed;
+      spotLightHelper.update();
+      sphereMesh.position.y = Math.abs(Math.PI * Math.sin(step)) + 1;
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    const gui = GuiControl({
+      light: spotLight,
+      camera: camera,
+    });
+
     return () => {
       ref.current?.removeChild(renderer.domElement);
-      renderer.clear();
-      scene.clear();
-      perspective.clear();
       gui.destroy();
     };
   }, [windowSize]);
